@@ -9,7 +9,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // WorkOS 设计系统颜色（直接引用 CSS 变量）
+        // Ageno 设计系统颜色（直接引用 CSS 变量）
         "wos-base":     "var(--bg-base)",
         "wos-surface":  "var(--bg-surface)",
         "wos-elevated": "var(--bg-elevated)",

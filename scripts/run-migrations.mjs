@@ -45,7 +45,7 @@ async function runViaPSQL(sql) {
 const migrationsDir = join(__dirname, '..', 'supabase', 'migrations')
 const files = readdirSync(migrationsDir).sort()
 
-console.log(`\n📦 WorkOS 数据库迁移\n`)
+console.log(`\n📦 Ageno 数据库迁移\n`)
 console.log(`共 ${files.length} 个迁移文件:\n`)
 files.forEach(f => console.log(`  - ${f}`))
 

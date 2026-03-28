@@ -86,13 +86,13 @@ export default function OnboardingPage() {
             className="text-lg font-bold"
             style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
           >
-            W
+            A
           </span>
           <span
             className="text-sm font-medium"
             style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
           >
-            WorkOS
+            geno
           </span>
         </div>
 
@@ -118,7 +118,7 @@ export default function OnboardingPage() {
         <div className="flex flex-col gap-8 animate-page-enter">
           <div className="flex flex-col items-center gap-2 text-center">
             <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-              🎉 欢迎，一切就绪
+              🎉 欢迎使用 Ageno，一切就绪
             </h1>
             <p
               className="text-sm leading-relaxed"

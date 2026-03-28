@@ -94,13 +94,13 @@ export default function RegisterPage() {
           className="text-xl font-bold"
           style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
         >
-          W
+          A
         </span>
         <span
           className="text-sm font-medium"
           style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
         >
-          WorkOS
+          geno
         </span>
       </div>
 

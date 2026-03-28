@@ -13,7 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WorkOS · AI 数字员工平台",
+  title: {
+    default: "Ageno · AI 数字员工平台",
+    template: "%s · Ageno",
+  },
   description: "雇佣 AI 数字员工，把事务性工作交给 Agent 执行",
 };
 

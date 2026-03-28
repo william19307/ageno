@@ -1,4 +1,4 @@
-// ── WorkOS 全局类型定义 ──
+// ── Ageno 全局类型定义 ──
 
 export interface Organization {
   id: string;

@@ -45,13 +45,13 @@ export default function Topbar({ tokenUsed = 0, tokenQuota = 1000000 }: TopbarPr
           className="font-bold text-sm"
           style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontSize: '14px' }}
         >
-          W
+          A
         </span>
         <span
           className="font-medium"
           style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '12px' }}
         >
-          WorkOS
+          geno
         </span>
       </div>
 

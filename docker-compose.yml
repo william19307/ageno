@@ -1,0 +1,11 @@
+# Ageno 生产编排（与 Dockerfile 同目录执行：docker compose up -d --build）
+# 部署前请在同目录放置 .env.local（勿提交仓库），含 NEXT_PUBLIC_SUPABASE_URL 等变量
+
+services:
+  ageno:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    restart: always

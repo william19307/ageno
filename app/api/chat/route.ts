@@ -2,8 +2,34 @@ import { createClient } from '@/lib/supabase/server'
 import { streamChatCompletion, type ChatCompletionMessage } from '@/lib/ai'
 import { estimateTokenCostUsdCny } from '@/lib/token-cost'
 import { buildFileSpaceSystemAppend, type AgentFileBrief } from '@/lib/files-for-agent'
+import { embedTexts } from '@/lib/minimax-embed'
+import { buildRagContextPrompt, type RagMatchRow } from '@/lib/rag-prompt'
 
 const MAX_FULL_FILE_INJECT_CHARS = 120_000
+
+/**
+ * 仅描述 <file> 语法与编码，不得与【输出规则】矛盾。
+ * 长文/报告的正文只能出现在 <file> 内（见 FILE_OUTPUT_RULES）。
+ */
+const FILE_PREVIEW_SYNTAX =
+  '【可预览文件 - 语法】侧栏预览依赖唯一根标签：<file name="文件名含扩展名" type="markdown|text|pdf|docx">…</file>。满足上方【输出规则】时，报告/分析/markdown 全文必须写在标签内；对话里除该标签外仅允许一句短说明（建议≤40字），禁止在标签外写 ## 章节、条款列表、长段落。若须用 Base64 传 UTF-8 文本（含中文），须先 UTF-8 字节再 Base64，禁止对含非 Latin1 的字符串直接 btoa。pdf/docx 标签内为无换行 Base64（文件原始字节）。'
+
+/** 优先级高于 Agent 人设中的排版习惯及【语法】里未冲突部分 */
+const FILE_OUTPUT_RULES = `【输出规则 - 最高优先级】
+以下规则覆盖「在对话里直接输出长文」的习惯。违反视为错误回复。
+当满足以下任一条件时，必须使用单个根标签 <file>…</file> 承载全部正文，禁止把报告/章节/列表铺在对话气泡里（气泡内除 <file> 外合计建议不超过一句约40字）：
+- 预计总输出超过约300字
+- 报告、合同、分析、方案、总结、评测、调研、计划、说明书类
+- 含多个章节、多级标题（# / ## / 一、二、）或分条列举占主要篇幅
+
+正确示例（对话里只有一句 + 一个 file 块）：
+「分析已完成，报告已在侧栏打开。」
+<file name="报告.md" type="markdown">
+# 标题
+正文……
+</file>
+
+错误示例：先在对话里写「## 一、概述」再接 <file>，或没有 <file> 却输出长文。`
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -143,6 +169,33 @@ export async function POST(req: Request) {
 
   const fileSpaceBlock = buildFileSpaceSystemAppend((agentFileRows ?? []) as AgentFileBrief[])
 
+  let ragBlock = ''
+  try {
+    const q = body.message.trim()
+    if (q.length > 0) {
+      const groupId = process.env.MINIMAX_GROUP_ID?.trim() || undefined
+      const [queryVec] = await embedTexts([q], 'query', apiKey, groupId)
+      const { data: matches, error: ragErr } = await supabase.rpc('match_file_chunks', {
+        query_embedding: queryVec,
+        match_count: 5,
+      })
+      if (!ragErr && Array.isArray(matches) && matches.length > 0) {
+        const rows: RagMatchRow[] = matches.map(
+          (m: { file_name?: string; chunk_content?: string; distance?: number }) => ({
+            file_name: String(m.file_name ?? ''),
+            chunk_content: String(m.chunk_content ?? ''),
+            distance: typeof m.distance === 'number' ? m.distance : undefined,
+          })
+        )
+        ragBlock = buildRagContextPrompt(rows)
+      } else if (ragErr) {
+        console.warn('[match_file_chunks]', ragErr.message)
+      }
+    }
+  } catch (e) {
+    console.warn('[RAG]', e)
+  }
+
   const fullFileIds = [...new Set((body.fullFileIds ?? []).filter((id): id is string => typeof id === 'string'))]
   let fullFileInjection = ''
   if (fullFileIds.length > 0) {
@@ -172,7 +225,9 @@ export async function POST(req: Request) {
     .order('created_at', { ascending: true })
 
   const baseSystem = agent.system_prompt?.trim() || `你是 ${agent.name}，专业、简洁地用中文回复用户。`
-  const system = `${baseSystem}\n\n${fileSpaceBlock}`
+  // 输出规则紧接人设，避免被文件列表/RAG 长文淹没；语法说明次之
+  const systemParts = [baseSystem, FILE_OUTPUT_RULES, FILE_PREVIEW_SYNTAX, fileSpaceBlock, ragBlock].filter(Boolean)
+  const system = systemParts.join('\n\n')
   const history = (historyRows ?? []).filter(
     (m): m is { role: 'user' | 'assistant'; content: string } =>
       (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3002",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "backfill:embeddings": "tsx scripts/backfill-file-embeddings.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -18,8 +19,12 @@
     "next": "16.2.1",
     "next-themes": "^0.4.6",
     "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^5.5.207",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-pdf": "^10.4.1",
+    "remark-gfm": "^4.0.1",
     "shadcn": "^4.1.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
@@ -34,6 +39,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
+    "tsx": "^4.19.3",
     "typescript": "^5"
   }
 }

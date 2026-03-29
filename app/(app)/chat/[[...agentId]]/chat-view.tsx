@@ -1,13 +1,17 @@
 'use client'
 
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Paperclip, ListTodo, Sparkles, MessageSquare } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { ErrorBanner } from '@/components/common/error-banner'
 import { EmptyState } from '@/components/common/empty-state'
 import { findMentionedFileIds, type AgentFileBrief } from '@/lib/files-for-agent'
+import { extractAgentFileTags } from '@/lib/agent-file-tag'
+import { agentFileTagToPreviewPayload } from '@/lib/file-preview-payload'
+import type { FilePreviewPayload } from '@/lib/file-preview-types'
+import FilePreviewPanel from '@/components/file-preview/file-preview-panel'
+import ChatAssistantMessageContent from '@/components/chat/chat-assistant-message-content'
 
 export type ChatAgentRow = {
   id: string
@@ -56,8 +60,6 @@ export default function ChatView({
   recentConversations: ConversationSummary[]
   agentFiles: AgentFileBrief[]
 }) {
-  const router = useRouter()
-  const [pending, startTransition] = useTransition()
   const [conversationId, setConversationId] = useState<string | null>(initialConversationId)
   const [messages, setMessages] = useState<UiMessage[]>(initialMessages)
   const [input, setInput] = useState('')
@@ -70,8 +72,15 @@ export default function ChatView({
   const fileRef = useRef<HTMLInputElement>(null)
   const assistantAccumRef = useRef('')
   const prevConvRef = useRef<string | null | undefined>(undefined)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewPayload, setPreviewPayload] = useState<FilePreviewPayload | null>(null)
 
   const agent = agents.find(a => a.id === activeAgentId)!
+
+  function openPreview(p: FilePreviewPayload) {
+    setPreviewPayload(p)
+    setPreviewOpen(true)
+  }
 
   useEffect(() => {
     setConversationId(initialConversationId)
@@ -150,8 +159,8 @@ export default function ChatView({
       const newConv = res.headers.get('X-Conversation-Id')
       if (newConv) {
         setConversationId(newConv)
-        router.replace(`/chat/${activeAgentId}/${newConv}`)
-        router.refresh()
+        const path = `/chat/${activeAgentId}/${newConv}`
+        window.history.replaceState(window.history.state, '', path)
       }
 
       if (!res.ok) {
@@ -192,9 +201,15 @@ export default function ChatView({
               )
             }
             if (ev.done && ev.usage) {
-              const ids = findMentionedFileIds(assistantAccumRef.current, agentFiles)
+              const finalAssistant = assistantAccumRef.current
+              const ids = findMentionedFileIds(finalAssistant, agentFiles)
               if (ids.length) {
                 setStickyFullFileIds(prev => [...new Set([...prev, ...ids])])
+              }
+              const tags = extractAgentFileTags(finalAssistant)
+              if (tags.length) {
+                setPreviewPayload(agentFileTagToPreviewPayload(tags[tags.length - 1]))
+                setPreviewOpen(true)
               }
               assistantAccumRef.current = ''
               setMessages(m =>
@@ -218,7 +233,6 @@ export default function ChatView({
       }
       setAttachNames([])
       setTaskMode(false)
-      startTransition(() => router.refresh())
     } catch (e) {
       const msg = e instanceof Error ? e.message : '发送失败'
       setFlowError(msg)
@@ -423,6 +437,8 @@ export default function ChatView({
                         <span className="inline-block size-1.5 animate-typing-dot rounded-full bg-[var(--text-tertiary)]" />
                         <span className="inline-block size-1.5 animate-typing-dot rounded-full bg-[var(--text-tertiary)]" />
                       </span>
+                    ) : m.role === 'assistant' ? (
+                      <ChatAssistantMessageContent content={m.content} onPreview={openPreview} />
                     ) : (
                       <p className="whitespace-pre-wrap">{m.content}</p>
                     )}
@@ -469,7 +485,7 @@ export default function ChatView({
               onChange={e => setInput(e.target.value)}
               placeholder="输入消息，Shift+Enter 换行"
               rows={3}
-              disabled={streaming || pending}
+              disabled={streaming}
               className="resize-none border-[var(--border-default)] bg-[var(--bg-surface)] text-sm"
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -530,6 +546,16 @@ export default function ChatView({
           </div>
         </div>
       </div>
+
+      <FilePreviewPanel
+        open={previewOpen}
+        onOpenChange={v => {
+          setPreviewOpen(v)
+          if (!v) setPreviewPayload(null)
+        }}
+        payload={previewPayload}
+        folderId={null}
+      />
     </div>
   )
 }

@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { extractFileText } from '@/lib/file-text-extract'
+import { indexFileRagChunks } from '@/lib/file-rag-index'
+import { storageObjectFileName } from '@/lib/storage-filename'
 
 async function getOrgContext() {
   const supabase = await createClient()
@@ -88,6 +90,16 @@ export async function indexUploadedFile(fileId: string) {
     .eq('owner_id', user.id)
 
   if (uErr) return { error: uErr.message }
+
+  const apiKey = process.env.MINIMAX_API_KEY?.trim() ?? ''
+  if (apiKey && content.trim()) {
+    const groupId = process.env.MINIMAX_GROUP_ID?.trim() || undefined
+    const rag = await indexFileRagChunks(supabase, fileId, content, apiKey, groupId)
+    if ('error' in rag) {
+      console.warn('[indexFileRagChunks]', rag.error)
+    }
+  }
+
   revalidatePath('/files')
   return { ok: true }
 }
@@ -211,6 +223,161 @@ export async function renameFolder(folderId: string, newName: string) {
   if (error) return { error: error.message }
   revalidatePath('/files')
   return { ok: true }
+}
+
+export type FilePreviewData =
+  | { error: string }
+  | {
+      ok: true
+      fileId: string
+      name: string
+      mode: 'markdown' | 'pdf' | 'docx' | 'spreadsheet'
+      textContent: string | null
+      signedUrl: string | null
+    }
+
+/** 文件空间内预览：拉取元数据、正文或签名 URL（受 RLS） */
+export async function getFilePreviewData(fileId: string): Promise<FilePreviewData> {
+  const { supabase, user, orgId } = await getOrgContext()
+  if (!user || !orgId) return { error: '未登录或缺少组织' }
+
+  const { data: row, error } = await supabase
+    .from('files')
+    .select('id,name,mime_type,storage_key,content')
+    .eq('id', fileId)
+    .eq('organization_id', orgId)
+    .single()
+
+  if (error || !row) return { error: '文件不存在或无权访问' }
+
+  const name = row.name
+  const lower = name.toLowerCase()
+  const mime = (row.mime_type ?? '').toLowerCase()
+
+  let mode: 'markdown' | 'pdf' | 'docx' | 'spreadsheet' = 'markdown'
+  if (lower.endsWith('.pdf') || mime.includes('pdf')) mode = 'pdf'
+  else if (lower.endsWith('.docx') || mime.includes('wordprocessingml')) mode = 'docx'
+  else if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || mime.includes('spreadsheet') || mime.includes('excel'))
+    mode = 'spreadsheet'
+  else if (
+    lower.endsWith('.md') ||
+    lower.endsWith('.txt') ||
+    lower.endsWith('.csv') ||
+    mime.includes('text/')
+  )
+    mode = 'markdown'
+
+  let signedUrl: string | null = null
+  if (mode === 'pdf' || mode === 'docx') {
+    const { data: su, error: sErr } = await supabase.storage
+      .from('workos-files')
+      .createSignedUrl(row.storage_key, 3600)
+    if (sErr || !su?.signedUrl) return { error: sErr?.message ?? '无法生成预览链接' }
+    signedUrl = su.signedUrl
+  }
+
+  return {
+    ok: true,
+    fileId: row.id,
+    name: row.name,
+    mode,
+    textContent: row.content,
+    signedUrl,
+  }
+}
+
+function guessMimeFromFileName(name: string): string {
+  const n = name.toLowerCase()
+  if (n.endsWith('.md')) return 'text/markdown; charset=utf-8'
+  if (n.endsWith('.txt')) return 'text/plain; charset=utf-8'
+  if (n.endsWith('.csv')) return 'text/csv; charset=utf-8'
+  if (n.endsWith('.pdf')) return 'application/pdf'
+  if (n.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  return 'application/octet-stream'
+}
+
+/** 将 Agent 生成的文件保存到文件空间并触发索引 / RAG */
+export async function saveGeneratedFileToSpace(input: {
+  name: string
+  bodyUtf8?: string
+  bodyBase64?: string
+  folderId?: string | null
+  permission?: 'private' | 'company'
+}) {
+  const { supabase, user, orgId } = await getOrgContext()
+  if (!user || !orgId) return { error: '未登录或缺少组织' }
+
+  const name = input.name.trim()
+  if (!name) return { error: '文件名不能为空' }
+
+  let buffer: Buffer
+  if (input.bodyBase64?.trim()) {
+    try {
+      buffer = Buffer.from(input.bodyBase64.replace(/\s/g, ''), 'base64')
+    } catch {
+      return { error: 'Base64 解码失败' }
+    }
+  } else if (input.bodyUtf8 != null) {
+    buffer = Buffer.from(input.bodyUtf8, 'utf8')
+  } else {
+    return { error: '缺少文件内容' }
+  }
+
+  if (buffer.length === 0) return { error: '内容为空' }
+
+  const mime = guessMimeFromFileName(name)
+  const objectName = storageObjectFileName(name)
+  const storageKey = `${orgId}/${user.id}/${objectName}`
+
+  const { error: upErr } = await supabase.storage.from('workos-files').upload(storageKey, buffer, {
+    contentType: mime.split(';')[0].trim(),
+    upsert: false,
+  })
+  if (upErr) return { error: upErr.message }
+
+  const permission = input.permission ?? 'private'
+  const { data: inserted, error: insErr } = await supabase
+    .from('files')
+    .insert({
+      organization_id: orgId,
+      owner_id: user.id,
+      folder_id: input.folderId ?? null,
+      name,
+      storage_key: storageKey,
+      file_size: buffer.length,
+      mime_type: mime.split(';')[0].trim(),
+      permission,
+    })
+    .select('id')
+    .single()
+
+  if (insErr || !inserted) {
+    await supabase.storage.from('workos-files').remove([storageKey])
+    return { error: insErr?.message ?? '保存记录失败' }
+  }
+
+  const fileId = inserted.id
+
+  const { content, summary } = await extractFileText(buffer, { mimeType: mime.split(';')[0].trim(), fileName: name })
+  const { error: upRowErr } = await supabase
+    .from('files')
+    .update({ content, summary, updated_at: new Date().toISOString() })
+    .eq('id', fileId)
+    .eq('owner_id', user.id)
+
+  if (upRowErr) {
+    console.warn('[saveGeneratedFileToSpace] content update', upRowErr.message)
+  }
+
+  const apiKey = process.env.MINIMAX_API_KEY?.trim() ?? ''
+  if (apiKey && content.trim()) {
+    const groupId = process.env.MINIMAX_GROUP_ID?.trim() || undefined
+    const rag = await indexFileRagChunks(supabase, fileId, content, apiKey, groupId)
+    if ('error' in rag) console.warn('[saveGeneratedFileToSpace RAG]', rag.error)
+  }
+
+  revalidatePath('/files')
+  return { ok: true, fileId }
 }
 
 export async function deleteFolder(folderId: string) {

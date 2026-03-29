@@ -206,4 +206,63 @@
   .animate-spin-slow {
     animation: spin-slow 2s linear infinite;
   }
+
+  /* Agent / 文件预览 Markdown */
+  .prose-agent-md h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0.5rem;
+  }
+  .prose-agent-md h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0.65rem 0 0.4rem;
+  }
+  .prose-agent-md h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0.5rem 0 0.35rem;
+  }
+  .prose-agent-md p {
+    margin: 0.4rem 0;
+  }
+  .prose-agent-md ul,
+  .prose-agent-md ol {
+    margin: 0.4rem 0;
+    padding-left: 1.25rem;
+  }
+  .prose-agent-md li {
+    margin: 0.2rem 0;
+  }
+  .prose-agent-md strong {
+    font-weight: 600;
+  }
+  .prose-agent-md code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.85em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: var(--bg-elevated);
+  }
+  .prose-agent-md pre code {
+    display: block;
+    padding: 0.5rem;
+    overflow-x: auto;
+  }
+  .prose-agent-md blockquote {
+    border-left: 3px solid var(--accent);
+    margin: 0.5rem 0;
+    padding-left: 0.75rem;
+    color: var(--text-secondary);
+  }
+  .docx-html table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+  }
+  .docx-html td,
+  .docx-html th {
+    border: 1px solid var(--border-default);
+    padding: 4px 6px;
+  }
 }

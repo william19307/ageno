@@ -10,7 +10,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "canvas", "mammoth", "xlsx"],
+  transpilePackages: ["react-pdf", "pdfjs-dist"],
+  serverExternalPackages: ["pdf-parse", "canvas", "mammoth", "xlsx"],
 };
 
 export default nextConfig;

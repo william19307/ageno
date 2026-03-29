@@ -59,6 +59,14 @@ export async function extractFileText(
         parts.push(`[${sn}]\n${XLSX.utils.sheet_to_csv(sheet)}`)
       }
       raw = parts.join('\n\n')
+    } else if (
+      mime.includes('text/markdown') ||
+      mime.includes('text/plain') ||
+      name.endsWith('.md') ||
+      name.endsWith('.txt') ||
+      name.endsWith('.csv')
+    ) {
+      raw = buffer.toString('utf8')
     }
   } catch {
     raw = ''

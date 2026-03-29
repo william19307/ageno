@@ -33,6 +33,10 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { storageObjectFileName } from '@/lib/storage-filename'
+import FilePreviewPanel from '@/components/file-preview/file-preview-panel'
+import { serverFilePreviewToPayload } from '@/lib/file-preview-payload'
+import type { FilePreviewPayload } from '@/lib/file-preview-types'
 import {
   updateFilePermission,
   createFolder,
@@ -41,6 +45,7 @@ import {
   deleteFile,
   renameFile,
   getFileSignedUrl,
+  getFilePreviewData,
   listOrgMembersForShare,
   renameFolder,
   deleteFolder,
@@ -86,14 +91,6 @@ function permBadge(p: string) {
   return { t: '私有', c: 'var(--text-secondary)', bg: 'var(--bg-elevated)' }
 }
 
-/** Storage key 仅允许安全 ASCII；展示名仍用 file.name 写入数据库 */
-function storageObjectFileName(originalName: string): string {
-  const lastDot = originalName.lastIndexOf('.')
-  const rawExt = lastDot > 0 ? originalName.slice(lastDot + 1) : ''
-  const ext = rawExt.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toLowerCase() || 'bin'
-  return `${Date.now()}_${crypto.randomUUID()}.${ext}`
-}
-
 export default function FilesView({
   organizationId,
   userId,
@@ -125,6 +122,8 @@ export default function FilesView({
   const [newFolderName, setNewFolderName] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewPayload, setPreviewPayload] = useState<FilePreviewPayload | null>(null)
 
   useEffect(() => {
     setFiles(initialFiles)
@@ -268,6 +267,17 @@ export default function FilesView({
     const r = await getFileSignedUrl(f.storage_key)
     if (r.url) window.open(r.url, '_blank', 'noopener,noreferrer')
     else setErr(r.error ?? '无法生成链接')
+  }
+
+  async function openFilePreview(f: FileRow) {
+    setErr(null)
+    const r = await getFilePreviewData(f.id)
+    if ('ok' in r && r.ok) {
+      setPreviewPayload(serverFilePreviewToPayload(r))
+      setPreviewOpen(true)
+    } else {
+      setErr((r as { error: string }).error)
+    }
   }
 
   const empty = visibleFiles.length === 0 && visibleFolders.length === 0
@@ -471,9 +481,19 @@ export default function FilesView({
                       onMouseEnter={e => ((e.currentTarget as HTMLDivElement).style.background = 'var(--bg-base)')}
                       onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.background = 'transparent')}
                     >
-                      <span className="flex items-center gap-2 truncate" style={{ color: 'var(--text-primary)' }}>
+                      <span className="flex min-w-0 items-center gap-2 truncate" style={{ color: 'var(--text-primary)' }}>
                         <FileText className="size-3.5 shrink-0" style={{ color: 'var(--accent)' }} strokeWidth={1.5} />
-                        {f.name}
+                        <button
+                          type="button"
+                          className="min-w-0 truncate text-left underline-offset-2 hover:underline"
+                          style={{ color: 'var(--accent)' }}
+                          onClick={e => {
+                            e.stopPropagation()
+                            void openFilePreview(f)
+                          }}
+                        >
+                          {f.name}
+                        </button>
                       </span>
                       <span style={{ color: 'var(--text-secondary)' }}>{fileTypeLabel(f.mime_type, f.name)}</span>
                       <span className="font-mono text-xs" style={{ color: 'var(--text-tertiary)' }}>
@@ -501,7 +521,8 @@ export default function FilesView({
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="min-w-[200px]">
-                    <ContextMenuItem onClick={() => void openSigned(f)}>预览 / 下载</ContextMenuItem>
+                    <ContextMenuItem onClick={() => void openFilePreview(f)}>预览</ContextMenuItem>
+                    <ContextMenuItem onClick={() => void openSigned(f)}>新窗口打开 / 下载</ContextMenuItem>
                     <ContextMenuItem
                       onClick={() => {
                         const n = window.prompt('新文件名', f.name)
@@ -593,6 +614,16 @@ export default function FilesView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <FilePreviewPanel
+        open={previewOpen}
+        onOpenChange={v => {
+          setPreviewOpen(v)
+          if (!v) setPreviewPayload(null)
+        }}
+        payload={previewPayload}
+        folderId={folderId}
+      />
 
       <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
         <DialogContent className="max-w-sm">
